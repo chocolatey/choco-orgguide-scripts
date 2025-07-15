@@ -53,23 +53,17 @@ Param(
             }
         })]
     [String]
-    $OfflineInstallationMedia = 
-    $(
-        # Prompt the user for the license.
-            $Wshell = New-Object -ComObject Wscript.Shell
-            $null = $Wshell.Popup('You will need to provide the offline package archive. Please select the archive in the next file dialog.')
-            $null = [System.Reflection.Assembly]::LoadWithPartialName("System.windows.forms")
-            $OpenFileDialog = New-Object System.Windows.Forms.OpenFileDialog
-            $OpenFileDialog.initialDirectory = "$env:USERPROFILE\Downloads"
-            $OpenFileDialog.filter = 'All Files (*.*)| *.*'
-            $null = $OpenFileDialog.ShowDialog()
+    $OfflineInstallationMedia,
 
-            $OpenFileDialog.filename
-    ),
-
-    [Parameter()]
+    [Parameter(ParameterSetName = 'default')]
+    [Parameter(ParameterSetName = 'certificate')]
     [String]
-    $Certificate
+    $CertificateThumbprint,
+
+    [Parameter(ParameterSetName = 'default')]
+    [Parameter(ParameterSetName = 'certificate')]
+    [String]
+    $CertificateDnsName
 )
 
 begin {
@@ -82,13 +76,69 @@ begin {
     }
 
     Copy-Item $LicenseFile -Destination "$licensePath\chocolatey.license.xml" -Force
+    Function Set-CCMCert {
+        <#
+        .SYNOPSIS
+        Certificate renewal script for Chocolatey Central Management(CCM)
+
+        .DESCRIPTION
+        This script will go through and renew the certificate association with both the Chocolatey Central Management Service and IIS Web hosted dashboard.
+
+        .PARAMETER CertificateThumbprint
+        Thumbprint value of the certificate you would like the Chocolatey Central Management Service and Web to run on.
+        Please make sure the certificate is located in both the Cert:\LocalMachine\TrustedPeople\ and Cert:\LocalMachine\My certificate stores.
+
+        .EXAMPLE
+        PS> .\Set-CCMCert.ps1 -CertificateThumbprint 'Your_Certificate_Thumbprint_Value'
+        #>
+
+        [CmdletBinding()]
+        param(
+            [Parameter(Mandatory)]
+            [Alias("CertificateThumbprint")]
+            [ArgumentCompleter({
+                    Get-ChildItem Cert:\LocalMachine\TrustedPeople, Cert:\LocalMachine\My | ForEach-Object {
+                        [System.Management.Automation.CompletionResult]::new(
+                            $_.Thumbprint,
+                            $_.Thumbprint,
+                            "ParameterValue",
+                            $_.Thumbprint
+                        )
+                    }
+                })]
+            [String]
+            $Thumbprint
+        )
+
+        begin {
+            if ($host.name -ne 'ConsoleHost') {
+                Write-Warning "This script cannot be ran from within PowerShell ISE"
+                Write-Warning "Please launch powershell.exe as an administrator, and run this script again"
+                break
+            }
+        }
+
+        process {
+
+            #Remove existing bindings
+            Write-Verbose "Removing existing bindings"
+            netsh http delete sslcert ipport=0.0.0.0:443
+
+            #Add new CCM Web IIS Binding
+            Write-Verbose "Adding new IIS binding to Chocolatey Central Management"
+            $guid = [Guid]::NewGuid().ToString("B")
+            netsh http add sslcert ipport=0.0.0.0:443 certhash=$Thumbprint certstorename=MY appid="$guid"
+            Get-WebBinding -Name ChocolateyCentralManagement | Remove-WebBinding
+            New-WebBinding -Name ChocolateyCentralManagement -Protocol https -Port 443 -SslFlags 0 -IpAddress '*'        
+        }
+    }
 
     function Set-SqlServerConfiguration {
         [CmdletBinding()]
         Param(
             [Parameter()]
             [String]
-            $SqlTcpPort  = '1433',
+            $SqlTcpPort = '1433',
 
             [Parameter()]
             [String]
@@ -145,6 +195,7 @@ begin {
         Write-Output "Firewall: Enabling SQL Server browser UDP port $SqlUdpPort."
         netsh advfirewall firewall add rule name="SQL Server Browser $SqlUdpPort" dir=in action=allow protocol=UDP localport=$SqlUdpPort profile=any enable=yes service=any
     }
+
     function Add-DatabaseUserAndRoles {
         [CmdletBinding()]
         param(
@@ -223,34 +274,47 @@ ALTER ROLE [$DatabaseRole] ADD MEMBER [$Username]
     }
 
     # Complete the installation of Chocolatey
-    switch ($PSCmdlet.ParameterSetName) {
-        'offline' { 
-            Write-Verbose -Message 'Using offline installation'
-            # Create local Chocolatey source folder
-            $localChocolateySource = if (-not (Test-Path 'C:\local_chocolatey')) {
-                New-Item 'C:\local_chocolatey' -ItemType Directory
+    if ($IsOfflineInstall) {
+        # If no offline media was provided, prompt for it
+        if (-not $OfflineInstallationMedia) {
+            $Wshell = New-Object -ComObject Wscript.Shell
+            $null = $Wshell.Popup('You will need to provide the offline package archive. Please select the archive in the next file dialog.')
+            $null = [System.Reflection.Assembly]::LoadWithPartialName("System.windows.forms")
+            $OpenFileDialog = New-Object System.Windows.Forms.OpenFileDialog
+            $OpenFileDialog.initialDirectory = "$env:USERPROFILE\Downloads"
+            $OpenFileDialog.filter = 'ZIP files (*.zip)| *.zip'
+            $null = $OpenFileDialog.ShowDialog()
+            $OfflineInstallationMedia = $OpenFileDialog.filename
+            
+            # Validate the selected file
+            if (-not $OfflineInstallationMedia -or -not (Test-Path $OfflineInstallationMedia)) {
+                throw 'No valid offline installation media was selected'
             }
-
-            # Unzip required packages
-            Expand-Archive $OfflineInstallationMedia -DestinationPath $localChocolateySource
-
-            # Install Chocolatey
-            $env:ChocolateyDownloadUrl = Convert-Path $localChocolateySource\chocolatey.*.nupkg
-            $chocoInstallScript = Join-Path $localChocolateySource -ChildPath 'install.ps1'
-            & $chocoInstallScript
-
-            # Configure Chocolatey source            
-            $ChocolateySource = $localChocolateySource
-
+            if (-not $OfflineInstallationMedia.EndsWith('.zip')) {
+                throw 'Selected file is not a .zip file'
+            }
+        }
+          
+        Write-Verbose -Message 'Using offline installation'
+        # Create local Chocolatey source folder
+        $localChocolateySource = if (-not (Test-Path 'C:\local_chocolatey')) {
+            New-Item 'C:\local_chocolatey' -ItemType Directory
         }
 
-        default {
-            Write-Verbose 'Using online installation'
-            # Install Chocolaetey
-            Invoke-RestMethod https://ch0.co/go | Invoke-Expression
-        }
+        # Unzip required packages
+        Expand-Archive $OfflineInstallationMedia -DestinationPath $localChocolateySource
+
+        # Install Chocolatey
+        $env:ChocolateyDownloadUrl = Convert-Path $localChocolateySource\chocolatey.*.nupkg
+        $chocoInstallScript = Join-Path $localChocolateySource -ChildPath 'install.ps1'
+        & $chocoInstallScript
+
+        # Configure Chocolatey source            
+        $ChocolateySource = $localChocolateySource
+
     }
 }
+
 end {
     switch ($Component) {
         'Database' {
@@ -260,7 +324,7 @@ end {
                 $sourceArgs = if ($ChocolateySource) { @("--source='$ChocolateySource'") } else { @() }
 
                 # Dependencies
-                & choco install chocolatey.extension dotnet-8.0-runtime dotnet-8.0-aspnetruntime @sourceArgs @baseArgs
+                & choco install chocolatey.extension dotnet-8.0-runtime dotnet-8.0-aspnetruntime @sourceArgs @baseArgs --package-parameters='/NoContextMenu'
 
                 # Main package
                 & choco install chocolatey-management-database @sourceArgs @baseArgs "--package-parameters-sensitive='/ConnectionString=$ConnectionString'"
@@ -277,19 +341,40 @@ end {
             $baseArgs = @('-y', '--no-progress')
             $sourceArgs = if ($ChocolateySource) { @("--source='$ChocolateySource'") } else { @() }
 
-            # Package parameters
-            $parameterString = if ($ServiceCredential) {
-                '/ConnectionString={0} /Username={1} /Password={2}' -f $ConnectionString, $ServiceCredential.UserName, $ServiceCredential.GetNetworkCredential().Password
+            # Package parameters - build parameter string with all sensitive parameters
+            $parameterParts = @("/ConnectionString=$ConnectionString")
+            
+            if ($ServiceCredential) {
+                $parameterParts += "/Username=$($ServiceCredential.UserName)"
+                $parameterParts += "/Password=$($ServiceCredential.GetNetworkCredential().Password)"
+            }
+            
+            if ($CertificateThumbprint) {
+                $parameterParts += "/CertificateThumbprint=$CertificateThumbprint"
+                Write-Output "Using certificate with thumbprint: $CertificateThumbprint"
             }
             else {
-                '/ConnectionString={0}' -f $ConnectionString
+                Write-Output 'No certificate information passed, will use a self-signed certificate'
             }
+            
+            if ($CertificateDnsName) {
+                $parameterParts += "/CertificateDnsName=$CertificateDnsName"
+            }
+            
+            $parameterString = $parameterParts -join ' '
 
             # Dependencies
             & choco install chocolatey.extension dotnet-8.0-runtime dotnet-8.0-aspnetruntime @sourceArgs @baseArgs
 
             # Main package
+            Write-Output "Installing with: $parameterString"
             & choco install chocolatey-management-service @sourceArgs @baseArgs "--package-parameters-sensitive='$parameterString'"
+
+            # Set the correct Service Url value
+            if ($CertificateDnsName) {
+                $config = @('config', 'set', 'centralManagementServiceUrl', $('https://{0}/ChocolateyManagementService:24020' -f $CertificateDnsName))
+                & choco @config
+            }
         }
 
         'Website' {
@@ -307,16 +392,22 @@ end {
             & choco install dotnet-8.0-runtime @sourceArgs @baseArgs
             & choco install dotnet-8.0-aspnetruntime @sourceArgs @baseArgs
 
-            # Package parameters
-            $parameterString = if ($ServiceCredential) {
-                '/ConnectionString={0} /Username={1} /Password={2}' -f $ConnectionString, $ServiceCredential.UserName, $ServiceCredential.GetNetworkCredential().Password
+            # Package parameters - build parameter string with all sensitive parameters
+            $parameterParts = @("/ConnectionString=$ConnectionString")
+            
+            if ($ServiceCredential) {
+                $parameterParts += "/Username=$($ServiceCredential.UserName)"
+                $parameterParts += "/Password=$($ServiceCredential.GetNetworkCredential().Password)"
             }
-            else {
-                '/ConnectionString={0}' -f $ConnectionString
-            }
+            
+            $parameterString = $parameterParts -join ' '
 
             # Main package installation
             & choco install chocolatey-management-web @sourceArgs @baseArgs "--package-parameters-sensitive='$parameterString'"
+
+            if ($CertificateThumbprint) {
+                Set-CCMCert -Thumbprint $CertificateThumbprint
+            }
         }
 
         default {
@@ -334,13 +425,23 @@ end {
             & choco install dotnet-8.0-runtime @sourceArgs @baseArgs
             & choco install dotnet-8.0-aspnetruntime @sourceArgs @baseArgs
 
-            # Package parameters
-            $parameterString = if ($ServiceCredential) {
-                '/ConnectionString={0} /Username={1} /Password={2}' -f $ConnectionString, $ServiceCredential.UserName, $ServiceCredential.GetNetworkCredential().Password
+            # Package parameters - build parameter string with all sensitive parameters
+            $parameterParts = @("/ConnectionString=$ConnectionString")
+            
+            if ($ServiceCredential) {
+                $parameterParts += "/Username=$($ServiceCredential.UserName)"
+                $parameterParts += "/Password=$($ServiceCredential.GetNetworkCredential().Password)"
             }
-            else {
-                '/ConnectionString={0}' -f $ConnectionString
+            
+            if ($CertificateThumbprint) {
+                $parameterParts += "/CertificateThumbprint=$CertificateThumbprint"
             }
+            
+            if ($CertificateDnsName) {
+                $parameterParts += "/CertificateDnsName=$CertificateDnsName"
+            }
+            
+            $parameterString = $parameterParts -join ' '
 
             # Install all components with SkipDatabasePermissionCheck
             & choco install chocolatey-management-database @sourceArgs @baseArgs "--package-parameters-sensitive='/SkipDatabasePermissionCheck $parameterString'"
