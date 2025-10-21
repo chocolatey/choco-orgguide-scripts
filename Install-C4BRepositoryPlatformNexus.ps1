@@ -1,128 +1,107 @@
 <#
-.SYNOPSIS
-C4B Organizational Deployment Guide Nexus setup script
+    .Synopsis
+        C4B Organizational Deployment Guide Nexus setup script
 
-.DESCRIPTION
-- Performs the following Sonatype Nexus Repository setup steps
-    - Install of Sonatype Nexus Repository Manager OSS instance
-    - Binds Sonatype Nexus Repository instance with an SSL certificate
-    - Setup of local windows TCP inbound firewall rule for repository access
-    - Removal of all default Nexus repositories
-    - Update of disk path for the default Nexus blob store if passed
-    - Creates choco-core, production, and test NuGet hosted format repositories
-    - Creates a choco-install raw hosted format repository, with a script for offline Chocolatey install
-    - Setup of production and choco-core repositories as Chocolatey source on the Repository Server
-    
+    .Description
+        Performs the following Sonatype Nexus Repository setup steps:
+        - Install of Sonatype Nexus Repository Manager OSS instance
+        - Binds Sonatype Nexus Repository instance with an SSL certificate
+        - Setup of local windows TCP inbound firewall rule for repository access
+        - Removal of all default Nexus repositories
+        - Update of disk path for the default Nexus blob store if passed
+        - Creates choco-core, production, and test NuGet hosted format repositories
+        - Creates a choco-install raw hosted format repository, with a script for offline Chocolatey install
+        - Setup of production and choco-core repositories as Chocolatey source on the Repository Server
+
+    .Example
+        .\Install-C4BRepositoryPlatformNexus.ps1 -Thumbprint $Thumbprint
+
+        # Installs with the default names and setup.
+
+    .Example
+        .\Install-C4BRepositoryPlatformNexus.ps1 -Thumbprint $Thumbprint -PackageStoragePath D:\Packages
+
+        # Installs with the default names, sets up a new package storage directory on D:\.
 #>
 [CmdletBinding()]
 param(
-    # The certificate thumbprint that identifies the target SSL certificate in
-    # the local machine certificate stores.
-    [Parameter(Mandatory)]
+    # The thumbprint of a certificate currently in LocalMachine/TrustedPeople for Nexus to use. Must be exportable.
+    [Parameter()]
     [ArgumentCompleter({
-        Get-ChildItem Cert:\LocalMachine\TrustedPeople | ForEach-Object {
-            [System.Management.Automation.CompletionResult]::new(
-                $_.Thumbprint,
-                $_.Thumbprint,
-                "ParameterValue",
-                ($_.Subject -replace "^CN=(?<FQDN>.+),?.*$",'${FQDN}')
-            )
-        }
-    })]
-    [ValidateScript({Test-CertificateDomain -Thumbprint $_})]
-    [string]
-    $Thumbprint = $(
-        if ((Test-Path C:\choco-setup\clixml\chocolatey-for-business.xml) -and (Import-Clixml C:\choco-setup\clixml\chocolatey-for-business.xml).CertThumbprint) {
-            (Import-Clixml C:\choco-setup\clixml\chocolatey-for-business.xml).CertThumbprint
-         } else{
-            Get-ChildItem Cert:\LocalMachine\TrustedPeople -Recurse | Sort-Object {
-                $_.Issuer -eq $_.Subject # Prioritise any certificates above self-signed
-            } | Select-Object -ExpandProperty Thumbprint -First 1
-        }
+            Get-ChildItem Cert:\LocalMachine\TrustedPeople | ForEach-Object {
+                [System.Management.Automation.CompletionResult]::new(
+                    $_.Thumbprint,
+                    $_.Thumbprint,
+                    "ParameterValue",
+                    ($_.Subject -replace "^CN=(?<FQDN>.+),?.*$", '${FQDN}')
+                )
+            }
+        })]
+    [string]$Thumbprint = $(
+        Get-ChildItem Cert:\LocalMachine\TrustedPeople -Recurse | Sort-Object {
+            $_.Issuer -eq $_.Subject # Prioritise any certificates above self-signed
+        } | Select-Object -ExpandProperty Thumbprint -First 1
     ),
 
-    # Needed when using a wildcard SSL certificate
-    # Must be a DNS resolvable FQDN for the server
-    [string]
-    $CertificateDnsName,
+    # The domain to use, if providing a wildcard certificate.
+    [string]$CertificateDnsName,
 
     # The TCP port used to host your Sonatype Nexus Repository instance over.
     # Default is TCP port '8443'
-    [uint16]
-    $NexusPort = 8443,
+    [uint16]$NexusPort = 8443,
 
     # The name of the repository used to store trusted packages in.
     # This is the default repository your endpoints will have access to install packages from.
     # Defaults to 'ChocoProd'.
     [ValidateLength(1, 64)]
     [ValidatePattern("[A-Za-z0-9\-]+[A-Za-z0-9\.-_]")]
-    [string]
-    $ProdRepoName = 'choco-prod',
+    [string]$ProductionRepositoryName = 'choco-prod',
 
     # The name of the repository to store untested packages in, before promoting to the production repository.
     # Defaults to 'ChocoTest'.
     [ValidateLength(1, 64)]
     [ValidatePattern("[A-Za-z0-9\-]+[A-Za-z0-9\.-_]")]
-    [string]
-    $TestRepoName = 'choco-test',
+    [string]$TestRepositoryName = 'choco-test',
 
     # The file path to associate to the default Nexus BlobStore for package storage on disk.
-    # Defaults to packages being stored at C:\ProgramData\sonatype-work\nexus3\blobs\default if file path no passed.
-    [ValidateScript({Test-Path $_})]
-    [string]
-    $PackageStoragePath
-
-
+    # Defaults to packages being stored at C:\ProgramData\sonatype-work\nexus3\blobs\default if file path not passed.
+    [string]$PackageStoragePath
 )
-process {
-    $DefaultEap = $ErrorActionPreference
-    $ErrorActionPreference = 'Stop'
-    Start-Transcript -Path "$env:SystemDrive\choco-setup\logs\Start-C4bNexusSetup-$(Get-Date -Format 'yyyyMMdd-HHmmss').txt"
+$DefaultEap, $ErrorActionPreference = $ErrorActionPreference, 'Stop'
+Start-Transcript -Path "$PSScriptRoot\C4bNexusSetup-$(Get-Date -Format 'yyyyMMdd-HHmmss').log"
+
+try {
+    choco install c4b-environment.powershell --confirm --no-progress  # This may not work if it's not on a source.
 
     # Bootstrap Chocolatey for Business
     if (Test-Path $PSScriptRoot\Packages.zip) {
-        # We're an offline install, despite Jenkins needing a repository and the internet to function.
+        # We're an offline install.
         $TemporarySource = Join-Path $env:TEMP 'c4b-offline-bootstrap'
         Expand-Archive -Path $PSScriptRoot\Packages.zip -DestinationPath $TemporarySource
-        $InstallScript = Join-Path $TemporarySource "ClientSetup.ps1"
-    } else {
-        $Downloader = [System.Net.WebClient]::new()
-        $Downloader.Credentials = $RepositoryUser
-        $InstallScript = $Downloader.DownloadString($BootstrapScript)
     }
-
-    & ([Scriptblock]::Create($InstallScript)) -RepositoryCredential $RepositoryUser -AdditionalSources @(
-        if ($TemporarySource) {
-            @{
-                Name     = "Bootstrap"
-                Source   = $TemporarySource
-                Priority = 1
-            }
-        }
-    )
 
     # Install base nexus-repository package
     Write-Host "Installing Sonatype Nexus Repository"
-    $chocoArgs = @('install', 'nexus-repository', '-y' ,'--no-progress', "--package-parameters='/Fqdn:localhost'")
-    & Invoke-Choco @chocoArgs
+    $chocoArgs = @('install', 'nexus-repository', '-y' , '--no-progress', "--package-parameters='/Fqdn:localhost'")
+    Invoke-Choco @chocoArgs
 
-    $chocoArgs = @('install', 'nexushell', '-y' ,'--no-progress')
-    & Invoke-Choco @chocoArgs
+    $chocoArgs = @('install', 'nexushell', '-y' , '--no-progress')
+    Invoke-Choco @chocoArgs
 
     $null = Set-NexusCert -Thumbprint $Thumbprint -Port $NexusPort
-        
+
     if ($CertificateDnsName = Get-ChocoEnvironmentProperty CertSubject) {
         # Override the domain, so we don't get prompted for wildcard certificates
         Get-NexusLocalServiceUri -HostnameOverride $CertificateDnsName | Write-Verbose
-    }
-    
+    }  # TODO: double prompt for fqdn
+
     # Add Nexus port access via firewall
     $FwRuleParams = @{
         DisplayName = "Nexus Repository access on TCP $NexusPort"
-        Direction = 'Inbound'
-        LocalPort = $NexusPort
-        Protocol = 'TCP'
-        Action = 'Allow'
+        Direction   = 'Inbound'
+        LocalPort   = $NexusPort
+        Protocol    = 'TCP'
+        Action      = 'Allow'
     }
     $null = New-NetFirewallRule @FwRuleParams
 
@@ -171,19 +150,24 @@ process {
 
     # Update Nexus Blob Storage location
     if ($PackageStoragePath) {
+        if ($PackageStoragePath -and -not (Test-Path $PackageStoragePath)) {
+            $null = New-Item -Path $PackageStoragePath -ItemType Directory -Force
+        }
+
         $CurrentBlobStorePath = (Get-NexusBlobStore -Name default -Type File).path
         if ($CurrentBlobStorePath -eq 'default') {
             $CurrentBlobStorePath = Join-Path $env:ProgramData "sonatype-work\nexus3\blobs\default"
         }
+
         if ($PackageStoragePath -ne $CurrentBlobStorePath) {
-            if (($InitialBlobStore = Get-NexusBlobStore).Where{$_.name -eq 'default'}.blobcount -ne 0 -and -not (Test-Path $PackageStoragePath)) {
+            if (($InitialBlobStore = Get-NexusBlobStore).Where{ $_.name -eq 'default' }.blobcount -ne 0 -and -not (Test-Path $PackageStoragePath)) {
                 Write-Host "Migrating existing default blob store from '$($CurrentBlobStorePath)' to '$($PackageStoragePath)'"
                 Copy-Item -Path $CurrentBlobStorePath -Destination $PackageStoragePath -Recurse
             }
 
             Update-NexusFileBlobStore -Name default -Path $PackageStoragePath -Confirm:$false
 
-            if ($InitialBlobStore.blobcount -eq (Get-NexusBlobStore).Where{$_.name -eq 'default'}.blobcount) {
+            if ($InitialBlobStore.blobcount -eq (Get-NexusBlobStore).Where{ $_.name -eq 'default' }.blobcount) {
                 Remove-Item $CurrentBlobStorePath -Recurse -Force
             }
         }
@@ -200,18 +184,17 @@ process {
         New-NexusNugetHostedRepository -Name choco-core -DeploymentPolicy Allow
     }
 
-    if (-not (Get-NexusRepository -Name $ProdRepoName)) {
-        New-NexusNugetHostedRepository -Name $ProdRepoName -DeploymentPolicy Allow
+    if (-not (Get-NexusRepository -Name $ProductionRepositoryName)) {
+        New-NexusNugetHostedRepository -Name $ProductionRepositoryName -DeploymentPolicy Allow
     }
 
-    if (-not (Get-NexusRepository -Name $TestRepoName)) {
-        New-NexusNugetHostedRepository -Name $TestRepoName -DeploymentPolicy Allow
+    if (-not (Get-NexusRepository -Name $TestRepositoryName)) {
+        New-NexusNugetHostedRepository -Name $TestRepositoryName -DeploymentPolicy Allow
     }
 
     if (-not (Get-NexusRepository -Name choco-install)) {
         New-NexusRawHostedRepository -Name choco-install -DeploymentPolicy Allow -ContentDisposition Attachment
     }
-
 
     # Create role for end user to pull from Nexus
     if (-not ($NexusRole = Get-NexusRole -Role 'chocorole' -ErrorAction SilentlyContinue)) {
@@ -287,16 +270,15 @@ process {
     }
 
     # Retrieve the API Key to use with Automation Platform
-    if ($NuGetApiKey = Get-ChocoEnvironmentProperty PackageApiKey) {
+    if ($NuGetApiKey = Get-ChocoEnvironmentProperty NuGetApiKey) {
         Write-Verbose "Using existing Nexus Api Key for '$($UploadUser.UserName)'"
     } else {
         $NuGetApiKey = (Get-NexusNuGetApiKey -Credential $UploadUser).apiKey
-        Set-ChocoEnvironmentProperty -Name PackageApiKey -Value $NuGetApiKey
+        Set-ChocoEnvironmentProperty -Name NuGetApiKey -Value $NuGetApiKey
     }
 
-    # Push latest ChocolateyInstall.ps1 to raw repo
-    $ScriptDir = "$env:SystemDrive\choco-setup\files\scripts"
-    $ChocoInstallScript = "$ScriptDir\ChocolateyInstall.ps1"
+    # Push latest ChocolateyInstall.ps1 to raw repository
+    $ChocoInstallScript = Join-Path $PSScriptRoot "ChocolateyInstall.ps1"
 
     if (-not (Test-Path $ChocoInstallScript)) {
         Invoke-WebRequest -Uri 'https://chocolatey.org/install.ps1' -OutFile $ChocoInstallScript
@@ -310,37 +292,60 @@ process {
         Write-Error "ChocolateyInstall.ps1 script signature is not valid. Please investigate."
     }
 
+    # Push ClientSetup to raw repository
+    $null = New-NexusRawComponent -RepositoryName 'choco-install' -File $PSScriptRoot\ClientSetup.ps1
+
     # Nexus NuGet V3 Compatibility
     Invoke-Choco feature disable --name="'usePackageRepositoryOptimizations'"
 
     # Add production repository as a Chocolatey source
-    $LocalSource = "$((Get-NexusRepository -Name $ProdRepoName).url)/index.json"
-    Invoke-Choco source add -n $ProdRepoName -s $LocalSource -u="$($UploadUser.UserName)" -p="$($UploadUser.GetNetworkCredential().Password)" --priority 1
+    $LocalSource = "$((Get-NexusRepository -Name $ProductionRepositoryName).url)/index.json"
+    Invoke-Choco source add -n $ProductionRepositoryName -s $LocalSource -u="$($UploadUser.UserName)" -p="$($UploadUser.GetNetworkCredential().Password)" --priority 1
 
     # Add Chocolatey Core repository as a Chocolatey source
     $LocalSource = "$((Get-NexusRepository -Name 'choco-core').url)/index.json"
     Invoke-Choco source add -n 'choco-core' -s $LocalSource -u="$($UploadUser.UserName)" -p="$($UploadUser.GetNetworkCredential().Password)" --priority 9 --admin-only
 
-    # Push all packages from previous steps to NuGet repo
+    if (-not $TemporarySource) {
+        $TemporarySource = Join-Path $env:TEMP "choco-offline"
+        if (-not (Test-Path $TemporarySource)) {
+            $null = New-Item -Path $TemporarySource -ItemType Directory -Force
+        }
+        # TODO: Argue over which packages need to be downloaded / pushed, here. If Core, is it just the basics?
+        (Get-ChocolateyBusinessManifest -ServerType *).Chocolatey | Where-Object Name -In @(
+            "chocolatey"
+            "chocolatey.extension"
+        ) | Save-ChocolateyInternalizedPackage | Copy-Item -Destination $TemporarySource -Force
+    }
+
+    New-ChocolateyLicensePackage -PackagesPath $TemporarySource
+
+    # Push all packages from previous steps to NuGet repository
     Write-Host "Pushing C4B Environment Packages to 'choco-core'"
-    Get-ChildItem -Path $TemporarySource -Filter *.nupkg | ForEach-Object {
+    Get-ChildItem -Path $TemporarySource -Filter *.nupkg -File -Recurse | ForEach-Object {
         Invoke-Choco push $_.FullName --source $LocalSource --apikey $NugetApiKey --force
     }
 
-    # Save useful params
-    Update-Clixml -Properties @{
-        NexusUri = Get-NexusLocalServiceUri
-        NexusCredential = $Credential
-        NexusProductionRepository = "$((Get-NexusRepository -Name $ProdRepoName).url)/index.json"
-        NexusTestRepository = "$((Get-NexusRepository -Name $TestRepoName).url)/index.json"
+    # Save useful values
+    $UsefulParams = @{
+        NexusUri                      = Get-NexusLocalServiceUri
+        NexusCredential               = $Credential
+        NexusProductionRepository     = "$((Get-NexusRepository -Name $ProductionRepositoryName).url)/index.json"
+        NexusTestRepository           = "$((Get-NexusRepository -Name $TestRepositoryName).url)/index.json"
         NexusChocolateyCoreRepository = "$((Get-NexusRepository -Name 'choco-core').url)/index.json"
-        NuGetApiKey = $NugetApiKey | ConvertTo-SecureString -AsPlainText -Force
+        NuGetApiKey                   = $NugetApiKey | ConvertTo-SecureString -AsPlainText -Force
+        ChocoUserCredential           = [PSCredential]::new("chocouser", $UserParams.Password)
+        PackagePusherCredential       = $UploadUser
     }
-}
-end {
-    if ($TemporarySource) {
-    choco source remove --name='Bootstrap'
-    Remove-Item $TemporarySource
+
+    Update-Clixml -Properties $UsefulParams
+
+    Write-Host "Use Get-ChocoEnvironmentProperty for Secure Values (Run Get-Help Get-ChocoEnvironmentProperty -Examples for examples)"
+    ConvertTo-Json $UsefulParams -Depth 1  # TODO: Discuss better options
+} finally {
+    if (Test-Path $TemporarySource) {
+        Invoke-Choco source remove --name='Bootstrap'
+        Remove-Item -Path $TemporarySource -Recurse
     }
     $ErrorActionPreference = $DefaultEap
     Stop-Transcript
