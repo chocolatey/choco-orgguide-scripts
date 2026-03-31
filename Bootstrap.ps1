@@ -77,16 +77,5 @@ if (-not (Get-ChildItem $OutputPath) -or $env:UpdateBootstrap) {
     Remove-Item $OutputPath\chocolatey-solutions-choco-orgguide-scripts-* -Recurse
 }
 
-# TEMPORARY WORKAROUND FOR LICENSE FEED
-# TODO: Remove
-if (Test-Path ~\Desktop\c4b-environment.powershell.*.nupkg) {
-    try {
-        Push-Location ~\Desktop
-        choco upgrade c4b-environment.powershell --source . --confirm  --no-progress
-    } finally {
-        Pop-Location
-    }
-}
-
 # Open the new location
 Set-Location $OutputPath
