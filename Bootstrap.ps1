@@ -70,11 +70,11 @@ if (-not (Get-Module C4B-Environment -ListAvailable)) {
 }
 
 if (-not (Get-ChildItem $OutputPath) -or $env:UpdateBootstrap) {
-    Invoke-WebRequest -Uri "https://api.github.com/repos/chocolatey/choco-orgguide-scripts/zipball/main" -OutFile $env:Temp\orgscripts.zip
+    Invoke-WebRequest -Uri "https://api.github.com/repos/chocolatey-solutions/choco-orgguide-scripts/zipball/main" -OutFile $env:Temp\orgscripts.zip
     Expand-Archive $env:Temp\orgscripts.zip $OutputPath -Force
-    Copy-Item $OutputPath\chocolatey-choco-orgguide-scripts-*\* $OutputPath -Force
+    Copy-Item $OutputPath\chocolatey-solutions-choco-orgguide-scripts-*\* $OutputPath -Force
     Remove-Item $env:Temp\orgscripts.zip
-    Remove-Item $OutputPath\chocolatey-choco-orgguide-scripts-* -Recurse
+    Remove-Item $OutputPath\chocolatey-solutions-choco-orgguide-scripts-* -Recurse
 }
 
 # TEMPORARY WORKAROUND FOR LICENSE FEED
