@@ -70,7 +70,7 @@ try {
     # We need to add each of the repositories so that we can use them in jobs
     foreach ($Repository in 'ChocolateyCore', 'Production', 'Test') {
         $Url = Get-Variable "$($Repository)RepositoryUrl" -ValueOnly
-        $Name = if ($Url -match '/(?<RepositoryName>.+)/(?<v3>index.json)?$') {
+        $Name = if ($Url -match '/(?<RepositoryName>[-\w]+)/(?<v3>index.json)?$') {
             $Matches.RepositoryName
         } else {
             $Repository
