@@ -126,9 +126,9 @@ param(
     [Parameter()]
     [switch]$IncludePackageTools,
 
-    # If set, does not install Chocolatey GUI for user interaction.
+    # Allows for the skipping of ChocolateyGUI installation.
     [Parameter()]
-    [switch]$SkipGUI,
+    [switch]$SkipChocolateyGUI,
 
     # Allows for the application of user-defined configuration that is applied after the base configuration.
     # Can override base configuration with this parameter.
@@ -300,7 +300,7 @@ choco upgrade chocolatey.extension --confirm --no-progress --limit-output @(
 
 choco upgrade chocolatey-agent --confirm --limit-output
 
-if (-not $SkipGUI) {
+if (-not $SkipChocolateyGUI) {
     Write-Verbose "Installing ChocolateyGUI"
     choco upgrade chocolateygui --confirm --no-progress --limit-output
     choco upgrade chocolateygui.extension --confirm --no-progress --limit-output
