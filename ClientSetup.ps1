@@ -382,7 +382,7 @@ if ($AdditionalSources) {
             if ($Source.BypassProxy) { '--bypass-proxy' }
             if ($Source.Priority) { "--priority='$($Source.Priority)'" }
             if ($Source.Certificate) { "--cert='$($Source.Certificate)'" }
-            if ($Source.CerfificatePassword) { "--certpassword='$($Source.CertificatePassword)'" }
+            if ($Source.CertificatePassword) { "--certpassword='$($Source.CertificatePassword)'" }
             '--limit-output'
         )
     }
