@@ -1,6 +1,6 @@
 # Chocolatey Organizational Deployment Guide Resources
 
-This repository houses the PowerShell scripts that are used as part of the [Chocolatey Organizational Deployment Guide](#placeholder).
+This repository houses the PowerShell scripts that are used as part of the [Chocolatey Organizational Deployment Guide](https://docs.chocolatey.org/en-us/guides/organizations/organizational-deployment-guide/).
 
 Here you will find the following:
 
@@ -9,4 +9,4 @@ Here you will find the following:
 - `PrepareAutomationPlatformOfflineInstall.ps1` : This PowerShell script downloads and prepares the components required to deploy the chosen automation platform in an air-gapped environment
 - `Install-ChocolateyAutomationPlatform.ps1` : This PowerShell script installs and configures the chosen automation platform in your environment.
 - `PrepareChocolateyCentralMgmtOfflineInstall.ps1`: This PowerShell script downloads and prepares the components required to deploy Chocolatey Central Management in an air-gapped environment
-- `Install-ChocolateyCentralManagement.ps1`: This PowerShell script installs and configures Chocolatey Central Management in your environment.
+- `Install-ChocolateyCentralManagement.ps1`: This PowerShell script installs and configures [Chocolatey Central Management](https://docs.chocolatey.org/en-us/central-management/) in your environment.

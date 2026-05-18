@@ -1,6 +1,6 @@
 <#
     .SYNOPSIS
-        Kickstart the organisation guide by downloading everything you need.
+        Kickstart the organization guide by downloading everything you need.
 
     .DESCRIPTION
         Downloads the scripts, modules, and the initial setup for use.
