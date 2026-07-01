@@ -38,7 +38,7 @@ param(
         })]
     [string]$Thumbprint = $(
         Get-ChildItem Cert:\LocalMachine\TrustedPeople -Recurse | Sort-Object {
-            $_.Issuer -eq $_.Subject # Prioritise any certificates above self-signed
+            $_.Issuer -eq $_.Subject # Prioritize any certificates above self-signed
         } | Select-Object -ExpandProperty Thumbprint -First 1
     ),
 

@@ -150,7 +150,7 @@ param(
     [Hashtable]$AdditionalFeatures,
 
     # Allows for the installation of additional packages after the system base packages have been installed.
-    # We expect to pass in one or more hashtables with package information in the following format:
+    # We expect to pass in one or more hash tables with package information in the following format:
     # @{
     #     Id = 'firefox'
     #     # Optional:
@@ -160,9 +160,9 @@ param(
     [Parameter()]
     [Hashtable[]]$AdditionalPackages,
 
-    # Allows for the addition of alternative sources after the base conifguration  has been applied.
+    # Allows for the addition of alternative sources after the base configuration has been applied.
     # Can override base configuration with this parameter.
-    # We expect to pass in one or more hashtables with source information in the following format:
+    # We expect to pass in one or more hash tables with source information in the following format:
     # @{
     #     Name = 'MySource'
     #     Source = 'https://nexus.fabrikam.com/repository/MyChocolateySource'
@@ -382,7 +382,7 @@ if ($AdditionalSources) {
             if ($Source.BypassProxy) { '--bypass-proxy' }
             if ($Source.Priority) { "--priority='$($Source.Priority)'" }
             if ($Source.Certificate) { "--cert='$($Source.Certificate)'" }
-            if ($Source.CerfificatePassword) { "--certpassword='$($Source.CertificatePassword)'" }
+            if ($Source.CertificatePassword) { "--certpassword='$($Source.CertificatePassword)'" }
             '--limit-output'
         )
     }
