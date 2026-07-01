@@ -69,8 +69,8 @@ try {
                 }
 
                 # Dependencies
-                Invoke-Choco install dotnet-8.0-runtime --version $(pv 'dotnet-8.0-runtime')
-                Invoke-Choco install dotnet-8.0-aspnetruntime --version $(pv 'dotnet-8.0-aspnetruntime')
+                Invoke-Choco install dotnet-10.0-runtime --version $(pv 'dotnet-10.0-runtime')
+                Invoke-Choco install dotnet-10.0-aspnetruntime --version $(pv 'dotnet-10.0-aspnetruntime')
 
                 # Main package
                 Invoke-Choco install chocolatey-management-database --package-parameters-sensitive="/ConnectionString=$ConnectionString"
@@ -104,8 +104,8 @@ try {
             $parameterString = $parameterParts -join ' '
 
             # Dependencies
-            Invoke-Choco install dotnet-8.0-runtime --version $(pv 'dotnet-8.0-runtime')
-            Invoke-Choco install dotnet-8.0-aspnetruntime --version $(pv 'dotnet-8.0-aspnetruntime')
+            Invoke-Choco install dotnet-10.0-runtime --version $(pv 'dotnet-10.0-runtime')
+            Invoke-Choco install dotnet-10.0-aspnetruntime --version $(pv 'dotnet-10.0-aspnetruntime')
 
             # Main package
             Invoke-Choco install chocolatey-management-service --package-parameters-sensitive="$parameterString"
@@ -144,8 +144,8 @@ try {
 
             # Package Dependencies
             Invoke-Choco install dotnet-aspnetcoremodule-v2 --version $(pv 'dotnet-aspnetcoremodule-v2')
-            Invoke-Choco install dotnet-8.0-runtime --version $(pv 'dotnet-8.0-runtime')
-            Invoke-Choco install dotnet-8.0-aspnetruntime --version $(pv 'dotnet-8.0-aspnetruntime')
+            Invoke-Choco install dotnet-10.0-runtime --version $(pv 'dotnet-10.0-runtime')
+            Invoke-Choco install dotnet-10.0-aspnetruntime --version $(pv 'dotnet-10.0-aspnetruntime')
 
             # Package parameters - build parameter string with all sensitive parameters
             $parameterParts = @("/ConnectionString=$ConnectionString")
