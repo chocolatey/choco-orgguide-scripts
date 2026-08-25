@@ -39,7 +39,7 @@ param(
         })]
     [string]$Thumbprint = $(
         Get-ChildItem Cert:\LocalMachine\TrustedPeople -Recurse | Sort-Object {
-            $_.Issuer -eq $_.Subject # Prioritise any certificates above self-signed
+            $_.Issuer -eq $_.Subject # Prioritize any certificates above self-signed
         } | Select-Object -ExpandProperty Thumbprint -First 1
     ),
 
@@ -244,7 +244,7 @@ try {
         )
     }
 
-    # Create new user for package-upload - as this changes the usercontext, ensure this is the last thing in the script, or it's in a job
+    # Create new user for package-upload - as this changes the user context, ensure this is the last thing in the script, or it's in a job
     if ($UploadUser = Get-ChocoEnvironmentProperty PackageUploadCredential) {
         Write-Verbose "Using existing PackageUpload credential '$($UploadUser.UserName)'"
     } else {
